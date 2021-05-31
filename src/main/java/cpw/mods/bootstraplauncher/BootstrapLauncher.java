@@ -28,10 +28,10 @@ public class BootstrapLauncher {
         final var cf = ModuleLayer.boot().configuration().resolve(ModuleFinder.of(pathList.toArray(Path[]::new)), ModuleFinder.ofSystem(), List.of("cpw.mods.modlauncher"));
         final var layer = ModuleLayer.defineModulesWithOneLoader(cf, List.of(ModuleLayer.boot()), cl);
         final var module = layer.layer().findModule("cpw.mods.modlauncher").orElseThrow();
-        Optional.ofNullable(MethodHandles.publicLookup())
-                .map(uncheck(l->l.findStatic(Class.forName(module, "cpw.mods.modlauncher.Launcher"), "main", MethodType.methodType(void.class, String[].class))))
+        Optional.ofNullable(Class.forName(module, "cpw.mods.modlauncher.Launcher"))
+                .map(uncheck(c->MethodHandles.publicLookup().findStatic(c, "main", MethodType.methodType(void.class, String[].class))))
                 .orElseThrow(()->new IllegalStateException("Failed to find modlauncher"))
-                .invoke(args);
+                .invokeExact(args);
     }
 
     public interface ExcFunction<T, R, E extends Throwable> {
