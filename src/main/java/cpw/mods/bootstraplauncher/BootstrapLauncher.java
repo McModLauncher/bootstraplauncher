@@ -1,19 +1,18 @@
 package cpw.mods.bootstraplauncher;
 
 import java.io.File;
-import java.lang.module.Configuration;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.module.ModuleFinder;
-import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class BootstrapLauncher {
-    public static void main(String[] args) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+    public static void main(String[] args) throws IllegalStateException, Throwable {
         var legacyCP = Objects.requireNonNull(System.getProperty("legacyClassPath"), "Missing legacyClassPath, cannot bootstrap");
         var versionName = Objects.requireNonNull(System.getProperty("versionName"), "Missing versionName, cannot bootstrap");
 
@@ -29,10 +28,10 @@ public class BootstrapLauncher {
         final var cf = ModuleLayer.boot().configuration().resolve(ModuleFinder.of(pathList.toArray(Path[]::new)), ModuleFinder.ofSystem(), List.of("cpw.mods.modlauncher"));
         final var layer = ModuleLayer.defineModulesWithOneLoader(cf, List.of(ModuleLayer.boot()), cl);
         final var module = layer.layer().findModule("cpw.mods.modlauncher").orElseThrow();
-        Optional.ofNullable(Class.forName(module, "cpw.mods.modlauncher.Launcher"))
-                .map(uncheck(c->c.getMethod("main", String[].class)))
+        Optional.ofNullable(MethodHandles.publicLookup())
+                .map(uncheck(l->l.findStatic(Class.forName(module, "cpw.mods.modlauncher.Launcher"), "main", MethodType.methodType(void.class, String[].class))))
                 .orElseThrow(()->new IllegalStateException("Failed to find modlauncher"))
-                .invoke(null, (Object)args);
+                .invoke(args);
     }
 
     public interface ExcFunction<T, R, E extends Throwable> {
