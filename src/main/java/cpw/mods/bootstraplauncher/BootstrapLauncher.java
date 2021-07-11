@@ -5,7 +5,9 @@ import cpw.mods.cl.ModuleClassLoader;
 import cpw.mods.jarhandling.SecureJar;
 
 import java.io.File;
+import java.io.IOException;
 import java.lang.module.ModuleFinder;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -13,34 +15,42 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 public class BootstrapLauncher {
     private static final boolean DEBUG = System.getProperties().containsKey("bsl.debug");
     @SuppressWarnings("unchecked")
     public static void main(String[] args) {
         var legacyCP = Objects.requireNonNull(System.getProperty("legacyClassPath"), "Missing legacyClassPath, cannot bootstrap");
-        var ignoreList = System.getProperty("ignoreList", "/org/ow2/asm/,securejarhandler"); //TODO: find existing modules automatically instead of taking in an ignore list.
-        var ignores = ignoreList.split(",");
+        var ignores = new ArrayList<Path>();
+        ModuleLayer.boot().configuration().modules()
+            .forEach(m -> m.reference().location().ifPresent(uri -> ignores.add(Paths.get(uri))));
+        Optional.ofNullable(System.getProperty("ignoreList"))
+            .ifPresent(l -> Arrays.stream(l.split(",")).forEach(s -> ignores.add(Paths.get(s))));
 
         var previousPkgs = new HashSet<String>();
         var jars = new ArrayList<>();
 
         outer:
         for  (var legacy : legacyCP.split(File.pathSeparator)) {
+            var path = Paths.get(legacy);
             for (var filter : ignores) {
-                if (legacy.contains(filter)) {
+                try {
+                    if (Files.isSameFile(path, filter)) {
+                        if (DEBUG)
+                            System.out.println(legacy + " IGNORED: " + filter);
+                        continue outer;
+                    }
+                } catch (IOException e) {
                     if (DEBUG)
-                        System.out.println(legacy + " IGNORED: " + filter);
-                    continue outer;
+                        e.printStackTrace();
                 }
             }
 
-            var path = Paths.get(legacy);
             if (DEBUG)
                 System.out.println(path.toString());
             var jar = SecureJar.from(new PkgTracker(Set.copyOf(previousPkgs), path), path);
