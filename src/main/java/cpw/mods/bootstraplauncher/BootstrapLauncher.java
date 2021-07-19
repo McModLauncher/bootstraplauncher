@@ -3,7 +3,6 @@ package cpw.mods.bootstraplauncher;
 import cpw.mods.cl.JarModuleFinder;
 import cpw.mods.cl.ModuleClassLoader;
 import cpw.mods.jarhandling.SecureJar;
-import cpw.mods.jarhandling.impl.SimpleJarMetadata;
 
 import java.io.File;
 import java.lang.module.ModuleFinder;
@@ -11,16 +10,15 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 public class BootstrapLauncher {
     private static final boolean DEBUG = System.getProperties().containsKey("bsl.debug");
@@ -32,6 +30,8 @@ public class BootstrapLauncher {
 
         var previousPkgs = new HashSet<String>();
         var jars = new ArrayList<>();
+        var filenameMap = getMergeFilenameMap();
+        var mergeMap = new HashMap<String, List<Path>>();
 
         outer:
         for (var legacy : legacyCP.split(File.pathSeparator)) {
@@ -46,6 +46,11 @@ public class BootstrapLauncher {
             var path = Paths.get(legacy);
             if (DEBUG)
                 System.out.println(path);
+            var filename = path.getFileName().toString();
+            if (filenameMap.containsKey(filename)) {
+                mergeMap.computeIfAbsent(filenameMap.get(filename), k -> new ArrayList<>()).add(path);
+                continue;
+            }
             var jar = SecureJar.from(new PkgTracker(Set.copyOf(previousPkgs), path), path);
             var pkgs = jar.getPackages();
             if (DEBUG)
@@ -53,7 +58,18 @@ public class BootstrapLauncher {
             previousPkgs.addAll(pkgs);
             jars.add(jar);
         }
-        var finder = mergeModules(jars.toArray(SecureJar[]::new));
+        mergeMap.forEach((modulename, paths) -> {
+            var pathsArray = paths.toArray(Path[]::new);
+            var jar = SecureJar.from(new PkgTracker(Set.copyOf(previousPkgs), pathsArray), pathsArray);
+            var pkgs = jar.getPackages();
+            if (DEBUG) {
+                paths.forEach(System.out::println);
+                pkgs.forEach(p -> System.out.println("  " + p));
+            }
+            previousPkgs.addAll(pkgs);
+            jars.add(jar);
+        });
+        var finder = jars.toArray(SecureJar[]::new);
 
         var alltargets = Arrays.stream(finder).map(SecureJar::name).toList();
         var jf = JarModuleFinder.of(finder);
@@ -68,28 +84,26 @@ public class BootstrapLauncher {
         ((Consumer<String[]>)loader.stream().findFirst().orElseThrow().get()).accept(args);
     }
 
-    private static SecureJar[] mergeModules(SecureJar[] finder) {
-        // newModule=module1,module2;otherModule=module3,module4
+    private static Map<String, String> getMergeFilenameMap() {
+        // newModule=filename1.jar,filename2.jar;otherModule=filename2.jar,filename3.jar
         var mergeModules = System.getProperty("mergeModules");
         if (mergeModules == null)
-            return finder;
+            return Map.of();
 
-        var moduleMap = Arrays.stream(finder).collect(Collectors.toMap(SecureJar::name, Function.identity()));
+        Map<String, String> filenameMap = new HashMap<>();
         for (var merge : mergeModules.split(";")) {
             var split = merge.split("=");
             var key = split[0];
-            var targets = Arrays.stream(split[1].split(",")).map(moduleMap::remove).filter(Objects::nonNull).toList();
-            var filter = targets.stream().map(SecureJar::getPathFilter).reduce(BiPredicate::or).orElseThrow();
-            var paths = targets.stream().map(SecureJar::getPrimaryPath).toArray(Path[]::new);
-
-            var newJar = SecureJar.from(sj -> new SimpleJarMetadata(key, null, sj.getPackages(), sj.getProviders()), filter, paths);
-            moduleMap.put(key, newJar);
+            var targets = split[1].split(",");
+            for (String target : targets) {
+                filenameMap.put(target, key);
+            }
         }
 
-        return moduleMap.values().toArray(SecureJar[]::new);
+        return filenameMap;
     }
 
-    private record PkgTracker(Set<String> packages, Path paths) implements BiPredicate<String, String> {
+    private record PkgTracker(Set<String> packages, Path... paths) implements BiPredicate<String, String> {
         @Override
         public boolean test(final String path, final String basePath) {
             if (packages.isEmpty()         || // the first jar, nothing is claimed yet
