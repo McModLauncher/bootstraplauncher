@@ -31,7 +31,7 @@ public class BootstrapLauncher {
         var previousPkgs = new HashSet<String>();
         var jars = new ArrayList<>();
         var filenameMap = getMergeFilenameMap();
-        var mergeMap = new HashMap<String, List<Path>>();
+        var mergeMap = new HashMap<Integer, List<Path>>();
 
         outer:
         for (var legacy : legacyCP.split(File.pathSeparator)) {
@@ -58,7 +58,7 @@ public class BootstrapLauncher {
             previousPkgs.addAll(pkgs);
             jars.add(jar);
         }
-        mergeMap.forEach((modulename, paths) -> {
+        mergeMap.forEach((idx, paths) -> {
             var pathsArray = paths.toArray(Path[]::new);
             var jar = SecureJar.from(new PkgTracker(Set.copyOf(previousPkgs), pathsArray), pathsArray);
             var pkgs = jar.getPackages();
@@ -84,20 +84,22 @@ public class BootstrapLauncher {
         ((Consumer<String[]>)loader.stream().findFirst().orElseThrow().get()).accept(args);
     }
 
-    private static Map<String, String> getMergeFilenameMap() {
-        // newModule=filename1.jar,filename2.jar;otherModule=filename2.jar,filename3.jar
+    private static Map<String, Integer> getMergeFilenameMap() {
+        // filename1.jar,filename2.jar;otherModule=filename2.jar,filename3.jar
         var mergeModules = System.getProperty("mergeModules");
         if (mergeModules == null)
             return Map.of();
 
-        Map<String, String> filenameMap = new HashMap<>();
+        Map<String, Integer> filenameMap = new HashMap<>();
+        int i = 0;
         for (var merge : mergeModules.split(";")) {
             var split = merge.split("=");
             var key = split[0];
             var targets = split[1].split(",");
             for (String target : targets) {
-                filenameMap.put(target, key);
+                filenameMap.put(target, i);
             }
+            i++;
         }
 
         return filenameMap;
