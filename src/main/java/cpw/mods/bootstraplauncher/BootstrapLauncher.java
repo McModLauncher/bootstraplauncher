@@ -93,9 +93,7 @@ public class BootstrapLauncher {
         Map<String, Integer> filenameMap = new HashMap<>();
         int i = 0;
         for (var merge : mergeModules.split(";")) {
-            var split = merge.split("=");
-            var key = split[0];
-            var targets = split[1].split(",");
+            var targets = merge.split(",");
             for (String target : targets) {
                 filenameMap.put(target, i);
             }
