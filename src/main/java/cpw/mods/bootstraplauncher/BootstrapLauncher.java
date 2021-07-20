@@ -85,7 +85,7 @@ public class BootstrapLauncher {
     }
 
     private static Map<String, Integer> getMergeFilenameMap() {
-        // filename1.jar,filename2.jar;otherModule=filename2.jar,filename3.jar
+        // filename1.jar,filename2.jar;filename2.jar,filename3.jar
         var mergeModules = System.getProperty("mergeModules");
         if (mergeModules == null)
             return Map.of();
