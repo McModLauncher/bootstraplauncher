@@ -22,12 +22,15 @@ import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public class BootstrapLauncher {
     private static final boolean DEBUG = System.getProperties().containsKey("bsl.debug");
     @SuppressWarnings("unchecked")
     public static void main(String[] args) {
         var legacyCP = loadLegacyClassPath();
+        System.setProperty("legacyClassPath",
+          String.join(File.pathSeparator, legacyCP)); //Ensure backwards compatibility if somebody reads this value later on.
         var ignoreList = System.getProperty("ignoreList", "/org/ow2/asm/,securejarhandler"); //TODO: find existing modules automatically instead of taking in an ignore list.
         var ignores = ignoreList.split(",");
 
@@ -37,7 +40,7 @@ public class BootstrapLauncher {
         var mergeMap = new HashMap<Integer, List<Path>>();
 
         outer:
-        for (var legacy : legacyCP.split(File.pathSeparator)) {
+        for (var legacy : legacyCP) {
             for (var filter : ignores) {
                 if (legacy.contains(filter)) {
                     if (DEBUG)
@@ -120,7 +123,7 @@ public class BootstrapLauncher {
         }
     }
 
-    private static String loadLegacyClassPath() {
+    private static List<String> loadLegacyClassPath() {
         var legacyCpPath = System.getProperty("legacyClassPath.file");
 
         if (legacyCpPath != null) {
@@ -128,7 +131,7 @@ public class BootstrapLauncher {
             if (Files.exists(legacyCPFileCandidatePath) && Files.isRegularFile(legacyCPFileCandidatePath)) {
                 try
                 {
-                    return Files.readString(legacyCPFileCandidatePath);
+                    return Files.readAllLines(legacyCPFileCandidatePath);
                 }
                 catch (IOException e)
                 {
@@ -137,6 +140,7 @@ public class BootstrapLauncher {
             }
         }
 
-        return Objects.requireNonNull(System.getProperty("legacyClassPath", System.getProperty("java.class.path")), "Missing legacyClassPath, cannot bootstrap");
+        return Arrays.asList(Objects.requireNonNull(System.getProperty("legacyClassPath", System.getProperty("java.class.path")), "Missing legacyClassPath, cannot bootstrap")
+                               .split(File.pathSeparator));
     }
 }
