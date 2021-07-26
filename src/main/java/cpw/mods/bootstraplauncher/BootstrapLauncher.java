@@ -5,7 +5,10 @@ import cpw.mods.cl.ModuleClassLoader;
 import cpw.mods.jarhandling.SecureJar;
 
 import java.io.File;
+import java.io.IOException;
 import java.lang.module.ModuleFinder;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -24,7 +27,7 @@ public class BootstrapLauncher {
     private static final boolean DEBUG = System.getProperties().containsKey("bsl.debug");
     @SuppressWarnings("unchecked")
     public static void main(String[] args) {
-        var legacyCP = Objects.requireNonNull(System.getProperty("legacyClassPath", System.getProperty("java.class.path")), "Missing legacyClassPath, cannot bootstrap");
+        var legacyCP = loadLegacyClassPath();
         var ignoreList = System.getProperty("ignoreList", "/org/ow2/asm/,securejarhandler"); //TODO: find existing modules automatically instead of taking in an ignore list.
         var ignores = ignoreList.split(",");
 
@@ -115,5 +118,27 @@ public class BootstrapLauncher {
                 idx == path.length() - 1 || // All directories can have a potential to exist without conflict, we only care about real files.
                 !packages.contains(path.substring(0, idx).replace('/', '.'));
         }
+    }
+
+    private static String loadLegacyClassPath() {
+        var legacyCpPath = System.getProperty("legacyClassPath.file", "NOT_DEFINED");
+
+        if (legacyCpPath.equals("NOT_DEFINED")) {
+            return Objects.requireNonNull(System.getProperty("legacyClassPath", System.getProperty("java.class.path")), "Missing legacyClassPath, cannot bootstrap");
+        }
+
+        var legacyCPFileCandidatePath = Paths.get(legacyCpPath);
+        if (Files.exists(legacyCPFileCandidatePath) && Files.isRegularFile(legacyCPFileCandidatePath)) {
+            try
+            {
+                return Files.readString(legacyCPFileCandidatePath);
+            }
+            catch (IOException e)
+            {
+                throw new IllegalStateException("Failed to load the legacy class path from the specified file: " + legacyCpPath, e);
+            }
+        }
+
+        return Objects.requireNonNull(System.getProperty("legacyClassPath", System.getProperty("java.class.path")), "Missing legacyClassPath, cannot bootstrap");
     }
 }
