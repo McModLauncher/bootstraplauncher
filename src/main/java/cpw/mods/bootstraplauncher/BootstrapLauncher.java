@@ -29,8 +29,7 @@ public class BootstrapLauncher {
     @SuppressWarnings("unchecked")
     public static void main(String[] args) {
         var legacyCP = loadLegacyClassPath();
-        System.setProperty("legacyClassPath",
-          String.join(File.pathSeparator, legacyCP)); //Ensure backwards compatibility if somebody reads this value later on.
+        System.setProperty("legacyClassPath", String.join(File.pathSeparator, legacyCP)); //Ensure backwards compatibility if somebody reads this value later on.
         var ignoreList = System.getProperty("ignoreList", "/org/ow2/asm/,securejarhandler"); //TODO: find existing modules automatically instead of taking in an ignore list.
         var ignores = ignoreList.split(",");
 
@@ -129,12 +128,10 @@ public class BootstrapLauncher {
         if (legacyCpPath != null) {
             var legacyCPFileCandidatePath = Paths.get(legacyCpPath);
             if (Files.exists(legacyCPFileCandidatePath) && Files.isRegularFile(legacyCPFileCandidatePath)) {
-                try
-                {
+                try {
                     return Files.readAllLines(legacyCPFileCandidatePath);
                 }
-                catch (IOException e)
-                {
+                catch (IOException e) {
                     throw new IllegalStateException("Failed to load the legacy class path from the specified file: " + legacyCpPath, e);
                 }
             }
