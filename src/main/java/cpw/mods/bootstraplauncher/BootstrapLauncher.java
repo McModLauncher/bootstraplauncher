@@ -121,21 +121,19 @@ public class BootstrapLauncher {
     }
 
     private static String loadLegacyClassPath() {
-        var legacyCpPath = System.getProperty("legacyClassPath.file", "NOT_DEFINED");
+        var legacyCpPath = System.getProperty("legacyClassPath.file");
 
-        if (legacyCpPath.equals("NOT_DEFINED")) {
-            return Objects.requireNonNull(System.getProperty("legacyClassPath", System.getProperty("java.class.path")), "Missing legacyClassPath, cannot bootstrap");
-        }
-
-        var legacyCPFileCandidatePath = Paths.get(legacyCpPath);
-        if (Files.exists(legacyCPFileCandidatePath) && Files.isRegularFile(legacyCPFileCandidatePath)) {
-            try
-            {
-                return Files.readString(legacyCPFileCandidatePath);
-            }
-            catch (IOException e)
-            {
-                throw new IllegalStateException("Failed to load the legacy class path from the specified file: " + legacyCpPath, e);
+        if (legacyCpPath != null) {
+            var legacyCPFileCandidatePath = Paths.get(legacyCpPath);
+            if (Files.exists(legacyCPFileCandidatePath) && Files.isRegularFile(legacyCPFileCandidatePath)) {
+                try
+                {
+                    return Files.readString(legacyCPFileCandidatePath);
+                }
+                catch (IOException e)
+                {
+                    throw new IllegalStateException("Failed to load the legacy class path from the specified file: " + legacyCpPath, e);
+                }
             }
         }
 
