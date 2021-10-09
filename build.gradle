@@ -1,7 +1,7 @@
 plugins {
     id 'net.minecraftforge.gradleutils' version '1.+'
-    id 'com.github.ben-manes.versions' version '0.38.0'
-    id 'org.javamodularity.moduleplugin' version '1.8.3'
+    id 'com.github.ben-manes.versions' version '0.39.0'
+    id 'org.javamodularity.moduleplugin' version '1.8.10'
     id 'java-library'
     id 'maven-publish'
     id 'eclipse'
@@ -21,7 +21,7 @@ repositories {
 }
 
 dependencies {
-    implementation('cpw.mods:securejarhandler:0.9.44')
+    implementation('cpw.mods:securejarhandler:0.9.54')
 }
 
 java {
