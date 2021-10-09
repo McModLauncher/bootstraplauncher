@@ -23,6 +23,7 @@ dependencies {
     implementation('cpw.mods:securejarhandler:0.9.44')
 }
 
+java.toolchain.languageVersion = JavaLanguageVersion.of(16)
 
 task sourcesJar(type: Jar) {
     archiveClassifier = 'sources'
