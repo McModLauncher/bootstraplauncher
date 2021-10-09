@@ -28,14 +28,22 @@ public class BootstrapLauncher {
     @SuppressWarnings("unchecked")
     public static void main(String[] args) {
         var legacyClasspath = loadLegacyClassPath();
+        // Ensure backwards compatibility if somebody reads this value later on.
         System.setProperty("legacyClassPath", String.join(File.pathSeparator, legacyClasspath));
 
-        var ignoreList = System.getProperty("ignoreList", "asm,securejarhandler"); // TODO: find existing modules automatically instead of taking in an ignore list.
+        // TODO: find existing modules automatically instead of taking in an ignore list.
+        // The ignore list exempts files that start with certain listed keywords from being turned into modules (like existing modules)
+        var ignoreList = System.getProperty("ignoreList", "asm,securejarhandler");
         var ignores = ignoreList.split(",");
 
+        // Tracks all previously encountered packages
+        // This prevents subsequent modules from including packages from previous modules, which is disallowed by the module system
         var previousPackages = new HashSet<String>();
+        // The list of all SecureJars, which represent one module
         var jars = new ArrayList<SecureJar>();
+        // Map of filenames to their 'module number', where all filenames sharing the same 'module number' is combined into one
         var filenameMap = getMergeFilenameMap();
+        // Map of 'module number' to the list of paths which are combined into that module
         var mergeMap = new HashMap<Integer, List<Path>>();
 
         outer:
@@ -76,6 +84,7 @@ public class BootstrapLauncher {
             jars.add(jar);
         }
 
+        // Iterate over merged modules map and combine them into one SecureJar each
         mergeMap.forEach((idx, paths) -> {
             var pathsArray = paths.toArray(Path[]::new);
             var jar = SecureJar.from(new PackageTracker(Set.copyOf(previousPackages), pathsArray), pathsArray);
@@ -93,12 +102,28 @@ public class BootstrapLauncher {
         });
         var secureJarsArray = jars.toArray(SecureJar[]::new);
 
+        // Gather all the module names from the SecureJars
         var allTargets = Arrays.stream(secureJarsArray).map(SecureJar::name).toList();
+        // Creates a module finder which uses the list of SecureJars to find modules from
         var jarModuleFinder = JarModuleFinder.of(secureJarsArray);
+        // Retrieve the boot layer's configuration
         var bootModuleConfiguration = ModuleLayer.boot().configuration();
+
+        // Creates the module layer configuration for the bootstrap layer module
+        // The parent configuration is the boot layer configuration (above)
+        // The `before` module finder, used to find modules "in" this layer, and is the jar module finder above
+        // The `after` module finder, used to find modules that aren't in the jar module finder or the parent configuration,
+        //   is the system module finder (which is probably in the boot configuration :hmmm:)
+        // And the list of root modules for this configuration (that is, the modules that 'belong' to the configuration) are
+        // the above modules from the SecureJars
         var bootstrapConfiguration = bootModuleConfiguration.resolveAndBind(jarModuleFinder, ModuleFinder.ofSystem(), allTargets);
+        // Creates the module class loader, which does the loading of classes and resources from the bootstrap module layer/configuration,
+        // falling back to the boot layer if not in the bootstrap layer
         var moduleClassLoader = new ModuleClassLoader("MC-BOOTSTRAP", bootstrapConfiguration, List.of(ModuleLayer.boot()));
+        // Actually create the module layer, using the bootstrap configuration above, the boot layer as the parent layer (as configured),
+        // and mapping all modules to the module class loader
         var layer = ModuleLayer.defineModules(bootstrapConfiguration, List.of(ModuleLayer.boot()), m -> moduleClassLoader);
+        // Set the context class loader to the module class loader from this point forward
         Thread.currentThread().setContextClassLoader(moduleClassLoader);
 
         final var loader = ServiceLoader.load(layer.layer(), Consumer.class);
@@ -107,10 +132,12 @@ public class BootstrapLauncher {
     }
 
     private static Map<String, Integer> getMergeFilenameMap() {
-        // filename1.jar,filename2.jar;filename2.jar,filename3.jar
         var mergeModules = System.getProperty("mergeModules");
         if (mergeModules == null)
             return Map.of();
+        // `mergeModules` is a semicolon-separated set of comma-separated set of paths, where each (comma) set of paths is
+        // combined into a single modules
+        // example: filename1.jar,filename2.jar;filename2.jar,filename3.jar
 
         Map<String, Integer> filenameMap = new HashMap<>();
         int i = 0;
@@ -128,14 +155,16 @@ public class BootstrapLauncher {
     private record PackageTracker(Set<String> packages, Path... paths) implements BiPredicate<String, String> {
         @Override
         public boolean test(final String path, final String basePath) {
-            if (packages.isEmpty() || // the first jar, nothing is claimed yet
-                path.startsWith("META-INF/")) // Every module can have a meta-inf
+            // This method returns true if the given path is allowed within the JAR (filters out 'bad' paths)
+
+            if (packages.isEmpty() || // This is the first jar, nothing is claimed yet, so allow everything
+                path.startsWith("META-INF/")) // Every module can have their own META-INF
                 return true;
 
             int idx = path.lastIndexOf('/');
-            return idx < 0 || // Something in the root of the module.
+            return idx < 0 || // Resources at the root are allowed to co-exist
                 idx == path.length() - 1 || // All directories can have a potential to exist without conflict, we only care about real files.
-                !packages.contains(path.substring(0, idx).replace('/', '.'));
+                !packages.contains(path.substring(0, idx).replace('/', '.')); // If the package hasn't been used by a previous JAR
         }
     }
 
