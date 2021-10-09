@@ -8,7 +8,6 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.module.ModuleFinder;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -25,69 +24,86 @@ import java.util.function.Consumer;
 
 public class BootstrapLauncher {
     private static final boolean DEBUG = System.getProperties().containsKey("bsl.debug");
+
     @SuppressWarnings("unchecked")
     public static void main(String[] args) {
-        var legacyCP = loadLegacyClassPath();
-        System.setProperty("legacyClassPath", String.join(File.pathSeparator, legacyCP)); //Ensure backwards compatibility if somebody reads this value later on.
-        var ignoreList = System.getProperty("ignoreList", "asm,securejarhandler"); //TODO: find existing modules automatically instead of taking in an ignore list.
+        var legacyClasspath = loadLegacyClassPath();
+        System.setProperty("legacyClassPath", String.join(File.pathSeparator, legacyClasspath));
+
+        var ignoreList = System.getProperty("ignoreList", "asm,securejarhandler"); // TODO: find existing modules automatically instead of taking in an ignore list.
         var ignores = ignoreList.split(",");
 
-        var previousPkgs = new HashSet<String>();
-        var jars = new ArrayList<>();
+        var previousPackages = new HashSet<String>();
+        var jars = new ArrayList<SecureJar>();
         var filenameMap = getMergeFilenameMap();
         var mergeMap = new HashMap<Integer, List<Path>>();
 
         outer:
-        for (var legacy : legacyCP) {
+        for (var legacy : legacyClasspath) {
             var path = Paths.get(legacy);
             var filename = path.getFileName().toString();
 
             for (var filter : ignores) {
                 if (filename.startsWith(filter)) {
-                    if (DEBUG)
-                        System.out.println(legacy + " IGNORED: " + filter);
+                    if (DEBUG) {
+                        System.out.println("bsl: file '" + legacy + "' ignored because filename starts with '" + filter + "'");
+                    }
                     continue outer;
                 }
             }
 
-            if (DEBUG)
-                System.out.println(path);
+            if (DEBUG) {
+                System.out.println("bsl: encountered path '" + legacy + "'");
+            }
 
             if (filenameMap.containsKey(filename)) {
+                if (DEBUG) {
+                    System.out.println("bsl: path is contained with module #" + filenameMap.get(filename) + ", skipping for now");
+                }
                 mergeMap.computeIfAbsent(filenameMap.get(filename), k -> new ArrayList<>()).add(path);
                 continue;
             }
-            var jar = SecureJar.from(new PkgTracker(Set.copyOf(previousPkgs), path), path);
-            var pkgs = jar.getPackages();
-            if (DEBUG)
-                pkgs.forEach(p -> System.out.println("  " + p));
-            previousPkgs.addAll(pkgs);
+
+            var jar = SecureJar.from(new PackageTracker(Set.copyOf(previousPackages), path), path);
+            var packages = jar.getPackages();
+
+            if (DEBUG) {
+                System.out.println("bsl: list of packages for file '" + legacy + "'");
+                packages.forEach(p -> System.out.println("bsl:    " + p));
+            }
+
+            previousPackages.addAll(packages);
             jars.add(jar);
         }
+
         mergeMap.forEach((idx, paths) -> {
             var pathsArray = paths.toArray(Path[]::new);
-            var jar = SecureJar.from(new PkgTracker(Set.copyOf(previousPkgs), pathsArray), pathsArray);
-            var pkgs = jar.getPackages();
+            var jar = SecureJar.from(new PackageTracker(Set.copyOf(previousPackages), pathsArray), pathsArray);
+            var packages = jar.getPackages();
+
             if (DEBUG) {
-                paths.forEach(System.out::println);
-                pkgs.forEach(p -> System.out.println("  " + p));
+                System.out.println("bsl: the following paths are merged together in module #" + idx);
+                paths.forEach(path -> System.out.println("bsl:    " + path));
+                System.out.println("bsl: list of packages for module #" + idx);
+                packages.forEach(p -> System.out.println("bsl:    " + p));
             }
-            previousPkgs.addAll(pkgs);
+
+            previousPackages.addAll(packages);
             jars.add(jar);
         });
-        var finder = jars.toArray(SecureJar[]::new);
+        var secureJarsArray = jars.toArray(SecureJar[]::new);
 
-        var alltargets = Arrays.stream(finder).map(SecureJar::name).toList();
-        var jf = JarModuleFinder.of(finder);
-        var cf = ModuleLayer.boot().configuration();
-        var newcf = cf.resolveAndBind(jf, ModuleFinder.ofSystem(), alltargets);
-        var mycl = new ModuleClassLoader("MC-BOOTSTRAP", newcf, List.of(ModuleLayer.boot()));
-        var layer = ModuleLayer.defineModules(newcf, List.of(ModuleLayer.boot()), m->mycl);
-        Thread.currentThread().setContextClassLoader(mycl);
+        var allTargets = Arrays.stream(secureJarsArray).map(SecureJar::name).toList();
+        var jarModuleFinder = JarModuleFinder.of(secureJarsArray);
+        var bootModuleConfiguration = ModuleLayer.boot().configuration();
+        var bootstrapConfiguration = bootModuleConfiguration.resolveAndBind(jarModuleFinder, ModuleFinder.ofSystem(), allTargets);
+        var moduleClassLoader = new ModuleClassLoader("MC-BOOTSTRAP", bootstrapConfiguration, List.of(ModuleLayer.boot()));
+        var layer = ModuleLayer.defineModules(bootstrapConfiguration, List.of(ModuleLayer.boot()), m -> moduleClassLoader);
+        Thread.currentThread().setContextClassLoader(moduleClassLoader);
 
         final var loader = ServiceLoader.load(layer.layer(), Consumer.class);
         // This *should* find the service exposed by ModLauncher's BootstrapLaunchConsumer {This doc is here to help find that class next time we go looking}
-        ((Consumer<String[]>)loader.stream().findFirst().orElseThrow().get()).accept(args);
+        ((Consumer<String[]>) loader.stream().findFirst().orElseThrow().get()).accept(args);
     }
 
     private static Map<String, Integer> getMergeFilenameMap() {
@@ -109,10 +125,10 @@ public class BootstrapLauncher {
         return filenameMap;
     }
 
-    private record PkgTracker(Set<String> packages, Path... paths) implements BiPredicate<String, String> {
+    private record PackageTracker(Set<String> packages, Path... paths) implements BiPredicate<String, String> {
         @Override
         public boolean test(final String path, final String basePath) {
-            if (packages.isEmpty()         || // the first jar, nothing is claimed yet
+            if (packages.isEmpty() || // the first jar, nothing is claimed yet
                 path.startsWith("META-INF/")) // Every module can have a meta-inf
                 return true;
 
@@ -138,7 +154,8 @@ public class BootstrapLauncher {
             }
         }
 
-        return Arrays.asList(Objects.requireNonNull(System.getProperty("legacyClassPath", System.getProperty("java.class.path")), "Missing legacyClassPath, cannot bootstrap")
-                               .split(File.pathSeparator));
+        var legacyClasspath = System.getProperty("legacyClassPath", System.getProperty("java.class.path"));
+        Objects.requireNonNull(legacyClasspath, "Missing legacyClassPath, cannot bootstrap");
+        return Arrays.asList(legacyClasspath.split(File.pathSeparator));
     }
 }
