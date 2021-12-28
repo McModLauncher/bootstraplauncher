@@ -1,5 +1,5 @@
 plugins {
-    id 'net.minecraftforge.gradleutils' version '1.+'
+    id 'net.minecraftforge.gradleutils' version '2.+'
     id 'com.github.ben-manes.versions' version '0.39.0'
     id 'org.javamodularity.moduleplugin' version '1.8.10'
     id 'java-library'
@@ -29,6 +29,10 @@ java {
     withSourcesJar()
 }
 
+changelog {
+    fromTag "0.1"
+}
+
 jar {
     //noinspection UnnecessaryQualifiedReference
     manifest.attributes(
@@ -52,22 +56,24 @@ artifacts {
 }
 
 publishing {
-    publications.register("mavenJava", MavenPublication) {
-        from components.java
-        pom {
-            name = 'Bootstrap launcher'
-            description = 'Allows bootstrapping a modularized environment from a classpath one'
-            url = 'https://github.com/cpw/bootstraplauncher'
-            scm {
-                url = 'https://github.com/cpw/bootstraplauncher'
-                connection = 'scm:git:git://github.com/cpw/bootstraplauncher.git'
-                developerConnection = 'scm:git:git@github.com:cpw/bootstraplauncher.git'
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifact sourcesJar
+            pom {
+                name = 'Bootstrap launcher'
+                description = 'Allows bootstrapping a modularized environment from a classpath one'
+                url = 'https://github.com/McModLauncher/bootstraplauncher'
+                scm {
+                    url = 'https://github.com/McModLauncher/bootstraplauncher'
+                    connection = 'scm:git:git@github.com:McModLauncher/bootstraplauncher.git'
+                    developerConnection = 'scm:git:git@github.com:McModLauncher/bootstraplauncher.git'
+                }
+                issueManagement {
+                    system = 'github'
+                    url = 'https://github.com/McModLauncher/bootstraplauncher/issues'
+                }
             }
-            issueManagement {
-                system = 'github'
-                url = 'https://github.com/cpw/bootstraplauncher/issues'
-            }
-
             developers {
                 developer {
                     id = 'cpw'
