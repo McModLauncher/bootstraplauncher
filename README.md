@@ -1,8 +1,8 @@
-# bootstraplauncher
+# BootstrapLauncher
 
 > Allows bootstrapping a modularized environment from a classpath one.
 
-bootstraplauncher (BSL for short) uses the following information:
+BootstrapLauncher (BSL for short) uses the following information:
 
 - The **(legacy) classpath information.** This is retrieved from the following, in descending order of priority:
     - The `legacyClassPath.file` system property, containing a _path list_ (paths separated by `;` on Windows and `:` on
@@ -46,5 +46,5 @@ For easier debugging, additional debugging information is printed to `System.out
 defined (regardless of its actual value).
 
 [path_separator]: https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/io/File.html#pathSeparatorChar
-[modlauncher]: https://github.com/cpw/modlauncher
+[modlauncher]: https://github.com/McModLauncher/modlauncher
 [bootmodule]: https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/ModuleLayer.html#boot()
