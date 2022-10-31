@@ -19,7 +19,6 @@
 package cpw.mods.bootstraplauncher;
 
 import cpw.mods.cl.JarModuleFinder;
-import cpw.mods.cl.ModularURLHandler;
 import cpw.mods.cl.ModuleClassLoader;
 import cpw.mods.jarhandling.SecureJar;
 
@@ -29,7 +28,18 @@ import java.lang.module.ModuleFinder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.ServiceLoader;
+import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 
@@ -136,6 +146,8 @@ public class BootstrapLauncher {
         // Set the context class loader to the module class loader from this point forward
         Thread.currentThread().setContextClassLoader(moduleClassLoader);
 
+        args = loadConfig(args);
+
         final var loader = ServiceLoader.load(layer.layer(), Consumer.class);
         // This *should* find the service exposed by ModLauncher's BootstrapLaunchConsumer {This doc is here to help find that class next time we go looking}
         ((Consumer<String[]>) loader.stream().findFirst().orElseThrow().get()).accept(args);
@@ -183,11 +195,10 @@ public class BootstrapLauncher {
 
         if (legacyCpPath != null) {
             var legacyCPFileCandidatePath = Paths.get(legacyCpPath);
-            if (Files.exists(legacyCPFileCandidatePath) && Files.isRegularFile(legacyCPFileCandidatePath)) {
+            if (Files.isRegularFile(legacyCPFileCandidatePath)) {
                 try {
                     return Files.readAllLines(legacyCPFileCandidatePath);
-                }
-                catch (IOException e) {
+                } catch (IOException e) {
                     throw new IllegalStateException("Failed to load the legacy class path from the specified file: " + legacyCpPath, e);
                 }
             }
@@ -200,5 +211,91 @@ public class BootstrapLauncher {
         } else {
             return Arrays.asList(legacyClasspath.split(File.pathSeparator));
         }
+    }
+
+    private static String[] loadConfig(String[] inputArgs) {
+        var argsPath = System.getProperty("bsl.config");
+
+        if (argsPath == null)
+            return inputArgs;
+
+        var argsFileCandidatePath = Paths.get(argsPath);
+        if (!Files.isRegularFile(argsFileCandidatePath))
+            return inputArgs;
+
+        try {
+            var configMap = readConfig(Files.readAllLines(argsFileCandidatePath));
+
+            // Defined keys:
+            // - system_property: Sets a system property (key=value)
+            // - arg: Appends a launch arg (key=value|key)
+
+            parseSystemProperties(configMap.get("system_property"));
+
+            return parseLaunchArgs(inputArgs, configMap.get("arg"));
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to load BootstrapLauncher config from the specified file: " + argsFileCandidatePath.toAbsolutePath(), e);
+        }
+    }
+
+    private static void parseSystemProperties(List<String> systemProps) {
+        if (systemProps == null)
+            return;
+
+        for (String prop : systemProps) {
+            int equalsIdx = prop.indexOf('=');
+
+            if (equalsIdx == -1)
+                continue;
+
+            String key = prop.substring(0, equalsIdx);
+            String value = prop.substring(equalsIdx + 1);
+
+            if (!key.isEmpty() && !value.isEmpty())
+                System.setProperty(key, value);
+        }
+    }
+
+    private static String[] parseLaunchArgs(String[] inputArgs, List<String> launchArgs) {
+        if (launchArgs == null || launchArgs.isEmpty())
+            return inputArgs;
+
+        ArrayList<String> inputArgsList = new ArrayList<>(Arrays.asList(inputArgs));
+
+        for (String launchArg : launchArgs) {
+            int equalsIdx = launchArg.indexOf('=');
+            String key = equalsIdx == -1 ? launchArg : launchArg.substring(0, equalsIdx);
+
+            // If the input args already contains the key, skip because user args take priority
+            if (!key.isEmpty() && !inputArgsList.contains(key)) {
+                inputArgsList.add(launchArg);
+            }
+        }
+
+        return inputArgsList.toArray(String[]::new);
+    }
+
+    private static Map<String, List<String>> readConfig(List<String> input) {
+        Map<String, List<String>> argsMap = new HashMap<>();
+
+        for (String arg : input) {
+            int colonIdx = arg.indexOf(':');
+
+            if (colonIdx == -1)
+                continue;
+
+            String key = arg.substring(0, colonIdx).trim().toLowerCase(Locale.ROOT);
+            String value = trimComments(arg.substring(colonIdx + 1));
+
+            if (!key.isEmpty() && !value.isEmpty())
+                argsMap.computeIfAbsent(key, k -> new ArrayList<>()).add(value);
+        }
+
+        return argsMap;
+    }
+
+    private static String trimComments(String line) {
+        int idx = line.indexOf('#');
+        return (idx == -1 ? line : line.substring(0, idx)).trim();
     }
 }
