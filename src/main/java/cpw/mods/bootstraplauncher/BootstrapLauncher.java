@@ -260,14 +260,22 @@ public class BootstrapLauncher {
         if (launchArgs == null || launchArgs.isEmpty())
             return inputArgs;
 
-        ArrayList<String> inputArgsList = new ArrayList<>(Arrays.asList(inputArgs));
+        List<String> inputArgsList = new ArrayList<>(Arrays.asList(inputArgs));
+        Set<String> inputArgsKeys = new HashSet<>();
+
+        for (String inputArg : inputArgs) {
+            int equalsIdx = inputArg.indexOf('=');
+            String key = equalsIdx == -1 ? inputArg : inputArg.substring(0, equalsIdx);
+
+            inputArgsKeys.add(key);
+        }
 
         for (String launchArg : launchArgs) {
             int equalsIdx = launchArg.indexOf('=');
             String key = equalsIdx == -1 ? launchArg : launchArg.substring(0, equalsIdx);
 
             // If the input args already contains the key, skip because user args take priority
-            if (!key.isEmpty() && !inputArgsList.contains(key)) {
+            if (!key.isEmpty() && !inputArgsKeys.contains(key)) {
                 inputArgsList.add(launchArg);
             }
         }
