@@ -251,7 +251,8 @@ public class BootstrapLauncher {
             String key = prop.substring(0, equalsIdx);
             String value = prop.substring(equalsIdx + 1);
 
-            if (!key.isEmpty() && !value.isEmpty())
+            // Only declare the property if it wasn't already declared on JVM startup by the user
+            if (!key.isEmpty() && !value.isEmpty() && System.getProperty(key) == null)
                 System.setProperty(key, value);
         }
     }
