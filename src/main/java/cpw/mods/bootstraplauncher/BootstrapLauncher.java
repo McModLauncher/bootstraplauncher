@@ -52,6 +52,8 @@ public class BootstrapLauncher {
         // Ensure backwards compatibility if somebody reads this value later on.
         System.setProperty("legacyClassPath", String.join(File.pathSeparator, legacyClasspath));
 
+        args = loadConfig(args);
+
         // TODO: find existing modules automatically instead of taking in an ignore list.
         // The ignore list exempts files that start with certain listed keywords from being turned into modules (like existing modules)
         var ignoreList = System.getProperty("ignoreList", "asm,securejarhandler");
@@ -145,8 +147,6 @@ public class BootstrapLauncher {
         var layer = ModuleLayer.defineModules(bootstrapConfiguration, List.of(ModuleLayer.boot()), m -> moduleClassLoader);
         // Set the context class loader to the module class loader from this point forward
         Thread.currentThread().setContextClassLoader(moduleClassLoader);
-
-        args = loadConfig(args);
 
         final var loader = ServiceLoader.load(layer.layer(), Consumer.class);
         // This *should* find the service exposed by ModLauncher's BootstrapLaunchConsumer {This doc is here to help find that class next time we go looking}
