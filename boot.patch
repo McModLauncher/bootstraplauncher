@@ -1,0 +1,20 @@
+diff --git a/src/main/java/cpw/mods/bootstraplauncher/BootstrapLauncher.java b/src/main/java/cpw/mods/bootstraplauncher/BootstrapLauncher.java
+index a801cbe..bb72464 100644
+--- a/src/main/java/cpw/mods/bootstraplauncher/BootstrapLauncher.java
++++ b/src/main/java/cpw/mods/bootstraplauncher/BootstrapLauncher.java
+@@ -63,10 +63,14 @@ public class BootstrapLauncher {
+         var filenameMap = getMergeFilenameMap();
+         // Map of 'module number' to the list of paths which are combined into that module
+         var mergeMap = new HashMap<Integer, List<Path>>();
++        var workdir = Paths.get("").toAbsolutePath().toString();
+ 
+         outer:
+         for (var legacy : legacyClasspath) {
+-            var path = Paths.get(legacy);
++            var path = Paths.get(legacy).toAbsolutePath();
++            if(!legacy.startsWith(workdir)) {
++                continue;
++            }
+             var filename = path.getFileName().toString();
+ 
+             for (var filter : ignores) {
