@@ -33,10 +33,6 @@ changelog {
     from '1.1'
 }
 
-test {
-    enabled = false
-}
-
 jar {
     manifest {
         attributes(
