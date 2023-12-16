@@ -35,8 +35,16 @@ import java.util.function.Consumer;
 public class BootstrapLauncher {
     private static final boolean DEBUG = System.getProperties().containsKey("bsl.debug");
 
-    @SuppressWarnings("unchecked")
+    public static void testMain(String... args) {
+        run(false, args);
+    }
+
     public static void main(String... args) {
+        run(true, args);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void run(boolean classloaderIsolation, String... args) {
         var legacyClasspath = loadLegacyClassPath();
         // Ensure backwards compatibility if somebody reads this value later on.
         System.setProperty("legacyClassPath", String.join(File.pathSeparator, legacyClasspath));
@@ -126,9 +134,11 @@ public class BootstrapLauncher {
         // And the list of root modules for this configuration (that is, the modules that 'belong' to the configuration) are
         // the above modules from the SecureJars
         var bootstrapConfiguration = bootModuleConfiguration.resolveAndBind(jarModuleFinder, ModuleFinder.ofSystem(), allTargets);
+        // If the classloading should be isolated, we do not configure a parent loader, otherwise we use the context CL
+        ClassLoader parentLoader = classloaderIsolation ? null : Thread.currentThread().getContextClassLoader();
         // Creates the module class loader, which does the loading of classes and resources from the bootstrap module layer/configuration,
         // falling back to the boot layer if not in the bootstrap layer
-        var moduleClassLoader = new ModuleClassLoader("MC-BOOTSTRAP", bootstrapConfiguration, List.of(ModuleLayer.boot()));
+        var moduleClassLoader = new ModuleClassLoader("MC-BOOTSTRAP", bootstrapConfiguration, List.of(ModuleLayer.boot()), parentLoader);
         // Actually create the module layer, using the bootstrap configuration above, the boot layer as the parent layer (as configured),
         // and mapping all modules to the module class loader
         var layer = ModuleLayer.defineModules(bootstrapConfiguration, List.of(ModuleLayer.boot()), m -> moduleClassLoader);
