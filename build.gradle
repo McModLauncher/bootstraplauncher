@@ -21,11 +21,12 @@ repositories {
 }
 
 dependencies {
+    compileOnly('org.jetbrains:annotations:24.0.1')
     implementation('cpw.mods:securejarhandler:2.1.24')
 }
 
 java {
-    toolchain.languageVersion = JavaLanguageVersion.of(16)
+    toolchain.languageVersion = JavaLanguageVersion.of(17)
     withSourcesJar()
 }
 

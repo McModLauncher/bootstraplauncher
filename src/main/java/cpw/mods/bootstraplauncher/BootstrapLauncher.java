@@ -20,7 +20,10 @@ package cpw.mods.bootstraplauncher;
 
 import cpw.mods.cl.JarModuleFinder;
 import cpw.mods.cl.ModuleClassLoader;
+import cpw.mods.jarhandling.JarContentsBuilder;
 import cpw.mods.jarhandling.SecureJar;
+import cpw.mods.niofs.union.UnionPathFilter;
+import org.jetbrains.annotations.VisibleForTesting;
 
 import java.io.File;
 import java.io.IOException;
@@ -28,14 +31,27 @@ import java.lang.module.ModuleFinder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
-import java.util.function.BiPredicate;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.ServiceLoader;
+import java.util.Set;
 import java.util.function.Consumer;
 
 public class BootstrapLauncher {
     private static final boolean DEBUG = System.getProperties().containsKey("bsl.debug");
 
-    public static void testMain(String... args) {
+    @VisibleForTesting
+    public static void unitTestingMain(String... args) {
+        System.err.println("*".repeat(80));
+        System.err.println("Starting in unit testing mode. Misconfiguration may mask bugs that would occur in normal operation.");
+        System.err.println("*".repeat(80));
         run(false, args);
     }
 
@@ -103,8 +119,12 @@ public class BootstrapLauncher {
             var paths = e.getValue();
             if (paths.size() == 1 && Files.notExists(paths.get(0))) return;
             var pathsArray = paths.toArray(Path[]::new);
-            var jar = SecureJar.from(new PackageTracker(Set.copyOf(previousPackages), pathsArray), pathsArray);
-            var packages = jar.getPackages();
+            var jarContents = new JarContentsBuilder()
+                    .paths(pathsArray)
+                    .pathFilter(new PackageTracker(Set.copyOf(previousPackages), pathsArray))
+                    .build();
+            var jar = SecureJar.from(jarContents);
+            var packages = jar.moduleDataProvider().descriptor().packages();
 
             if (DEBUG) {
                 System.out.println("bsl: the following paths are merged together in module " + name);
@@ -171,7 +191,7 @@ public class BootstrapLauncher {
         return filenameMap;
     }
 
-    private record PackageTracker(Set<String> packages, Path... paths) implements BiPredicate<String, String> {
+    private record PackageTracker(Set<String> packages, Path... paths) implements UnionPathFilter {
         @Override
         public boolean test(final String path, final String basePath) {
             // This method returns true if the given path is allowed within the JAR (filters out 'bad' paths)
