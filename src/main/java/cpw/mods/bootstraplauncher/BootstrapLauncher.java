@@ -27,6 +27,7 @@ import org.jetbrains.annotations.VisibleForTesting;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.module.Configuration;
 import java.lang.module.ModuleFinder;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,6 +48,11 @@ import java.util.function.Consumer;
 public class BootstrapLauncher {
     private static final boolean DEBUG = System.getProperties().containsKey("bsl.debug");
 
+    /**
+     * This entrypoint is used by the FML junit integration to launch without classloader isolation.
+     * It should not be used for any other purpose. For the consequences of reducing classloader isolation,
+     * read the documentation on {@link ModuleClassLoader#ModuleClassLoader(String, Configuration, List, ClassLoader)}
+     */
     @VisibleForTesting
     public static void unitTestingMain(String... args) {
         System.err.println("*".repeat(80));
