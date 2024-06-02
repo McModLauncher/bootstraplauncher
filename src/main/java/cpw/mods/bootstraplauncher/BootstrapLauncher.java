@@ -20,13 +20,16 @@ package cpw.mods.bootstraplauncher;
 
 import cpw.mods.cl.JarModuleFinder;
 import cpw.mods.cl.ModuleClassLoader;
+import cpw.mods.jarhandling.JarContents;
 import cpw.mods.jarhandling.JarContentsBuilder;
+import cpw.mods.jarhandling.JarMetadata;
 import cpw.mods.jarhandling.SecureJar;
 import cpw.mods.niofs.union.UnionPathFilter;
 import org.jetbrains.annotations.VisibleForTesting;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.module.Configuration;
 import java.lang.module.ModuleFinder;
 import java.nio.file.Files;
@@ -113,25 +116,37 @@ public class BootstrapLauncher {
             }
 
             if (Files.notExists(path)) continue;
-            // This computes the name of the artifact for detecting collisions
-            var jar = SecureJar.from(path);
-            if ("".equals(jar.name())) continue;
 
-            // If a module of the same name is already loaded, skip it
-            var existingModuleLocation = loadedModules.get(jar.name());
-            if (existingModuleLocation != null) {
-                if (!existingModuleLocation.equals(path)) {
-                    throw new IllegalStateException("Module named " + jar.name() + " was already on the JVMs module path loaded from " +
-                                                    existingModuleLocation + " but class-path contains it at location " + path);
-                }
-
+            // This computes the module name for the given artifact
+            String moduleName;
+            try (var jarContent = JarContents.of(path)) {
+                moduleName = JarMetadata.from(jarContent).name();
+            } catch (UncheckedIOException | IOException e) {
                 if (DEBUG) {
-                    System.out.println("bsl: skipping '" + path + "' because it is already loaded on boot-path as " + jar.name());
+                    System.out.println("bsl: skipping '" + path + "' due to an IO error: " + e);
                 }
                 continue;
             }
 
-            var jarname = pathLookup.computeIfAbsent(path, k -> filenameMap.getOrDefault(filename, jar.name()));
+            if ("".equals(moduleName)) {
+                continue;
+            }
+
+            // If a module of the same name is already loaded, skip it
+            var existingModuleLocation = loadedModules.get(moduleName);
+            if (existingModuleLocation != null) {
+                if (!existingModuleLocation.equals(path)) {
+                    throw new IllegalStateException("Module named " + moduleName + " was already on the JVMs module path loaded from " +
+                                                    existingModuleLocation + " but class-path contains it at location " + path);
+                }
+
+                if (DEBUG) {
+                    System.out.println("bsl: skipping '" + path + "' because it is already loaded on boot-path as " + moduleName);
+                }
+                continue;
+            }
+
+            var jarname = pathLookup.computeIfAbsent(path, k -> filenameMap.getOrDefault(filename, moduleName));
             order.add(jarname);
             mergeMap.computeIfAbsent(jarname, k -> new ArrayList<>()).add(path);
         }
