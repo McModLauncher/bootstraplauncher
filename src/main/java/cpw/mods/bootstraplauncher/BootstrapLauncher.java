@@ -44,6 +44,7 @@ import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public class BootstrapLauncher {
     private static final boolean DEBUG = System.getProperties().containsKey("bsl.debug");
@@ -70,6 +71,9 @@ public class BootstrapLauncher {
         var legacyClasspath = loadLegacyClassPath();
         // Ensure backwards compatibility if somebody reads this value later on.
         System.setProperty("legacyClassPath", String.join(File.pathSeparator, legacyClasspath));
+
+        // Loaded modules (name -> fs location)
+        var loadedModules = findLoadedModules();
 
         // TODO: find existing modules automatically instead of taking in an ignore list.
         // The ignore list exempts files that start with certain listed keywords from being turned into modules (like existing modules)
@@ -112,6 +116,21 @@ public class BootstrapLauncher {
             // This computes the name of the artifact for detecting collisions
             var jar = SecureJar.from(path);
             if ("".equals(jar.name())) continue;
+
+            // If a module of the same name is already loaded, skip it
+            var existingModuleLocation = loadedModules.get(jar.name());
+            if (existingModuleLocation != null) {
+                if (!existingModuleLocation.equals(path)) {
+                    throw new IllegalStateException("Module named " + jar.name() + " was already on the JVMs module path loaded from " +
+                                                    existingModuleLocation + " but class-path contains it at location " + path);
+                }
+
+                if (DEBUG) {
+                    System.out.println("bsl: skipping '" + path + "' because it is already loaded on boot-path as " + jar.name());
+                }
+                continue;
+            }
+
             var jarname = pathLookup.computeIfAbsent(path, k -> filenameMap.getOrDefault(filename, jar.name()));
             order.add(jarname);
             mergeMap.computeIfAbsent(jarname, k -> new ArrayList<>()).add(path);
@@ -119,7 +138,7 @@ public class BootstrapLauncher {
 
 
         // Iterate over merged modules map and combine them into one SecureJar each
-        mergeMap.entrySet().stream().sorted(Comparator.comparingInt(e-> order.indexOf(e.getKey()))).forEach(e -> {
+        mergeMap.entrySet().stream().sorted(Comparator.comparingInt(e -> order.indexOf(e.getKey()))).forEach(e -> {
             // skip empty paths
             var name = e.getKey();
             var paths = e.getValue();
@@ -176,6 +195,34 @@ public class BootstrapLauncher {
         ((Consumer<String[]>) loader.stream().findFirst().orElseThrow().get()).accept(args);
     }
 
+    /**
+     * Find a mapping from module-name to filesystem location for the modules that are on the JVMs boot module path.
+     */
+    private static Map<String, Path> findLoadedModules() {
+        record ModuleWithLocation(String name, Path location) {
+        }
+        return ModuleLayer.boot().configuration().modules().stream()
+                .map(module -> {
+                    var reference = module.reference();
+                    var moduleName = reference.descriptor().name();
+                    var locationUri = reference.location().orElse(null);
+                    if (moduleName.isBlank() || locationUri == null) {
+                        return null;
+                    }
+
+                    Path location;
+                    try {
+                        location = new File(locationUri).toPath();
+                    } catch (IllegalArgumentException ignored) {
+                        return null; // Ignore existing modules with non-filesystem locations
+                    }
+
+                    return new ModuleWithLocation(moduleName, location);
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(ModuleWithLocation::name, ModuleWithLocation::location));
+    }
+
     private static Map<String, String> getMergeFilenameMap() {
         var mergeModules = System.getProperty("mergeModules");
         if (mergeModules == null)
@@ -208,8 +255,8 @@ public class BootstrapLauncher {
 
             int idx = path.lastIndexOf('/');
             return idx < 0 || // Resources at the root are allowed to co-exist
-                idx == path.length() - 1 || // All directories can have a potential to exist without conflict, we only care about real files.
-                !packages.contains(path.substring(0, idx).replace('/', '.')); // If the package hasn't been used by a previous JAR
+                   idx == path.length() - 1 || // All directories can have a potential to exist without conflict, we only care about real files.
+                   !packages.contains(path.substring(0, idx).replace('/', '.')); // If the package hasn't been used by a previous JAR
         }
     }
 
@@ -220,8 +267,7 @@ public class BootstrapLauncher {
             var legacyCPFileCandidatePath = Paths.get(legacyCpPath);
             try {
                 return Files.readAllLines(legacyCPFileCandidatePath);
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 throw new IllegalStateException("Failed to load the legacy class path from the specified file: " + legacyCpPath, e);
             }
         }
